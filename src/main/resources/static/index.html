@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gerenciador de Jogos de Videogame</title>
+</head>
+<body>
+<h1>Gerenciador de Jogos de Videogame</h1>
+<p id="sucesso" role="status"></p>
+<p id="erro" role="alert" style="color: darkred"></p>
+
+<main>
+  <section id="telaLista">
+    <h2>Jogos cadastrados</h2>
+    <button id="novo" type="button">Incluir novo jogo</button>
+    <p id="vazio" hidden>Nenhum jogo cadastrado.</p>
+    <ul id="lista"></ul>
+  </section>
+
+  <section id="telaForm" hidden>
+    <h2 id="tituloForm">Incluir novo jogo</h2>
+
+    <form id="jogoForm" novalidate>
+      <p>
+        <label for="titulo">Título</label><br>
+        <input id="titulo" name="titulo" required>
+      </p>
+      <p>
+        <label for="ano">Ano de lançamento</label><br>
+        <input id="ano" name="anoLancamento" type="number" min="1950" required>
+      </p>
+      <p>
+        <label for="plataforma">Plataforma</label><br>
+        <input id="plataforma" name="plataforma" required>
+      </p>
+      <fieldset>
+        <legend>Disponível</legend>
+        <label><input type="radio" name="disponivel" value="true" required> Sim</label>
+        <label><input type="radio" name="disponivel" value="false"> Não</label>
+      </fieldset>
+      <p>
+        <label for="observacao">Observações (opcional)</label><br>
+        <textarea id="observacao" name="observacao" rows="3"></textarea>
+      </p>
+      <button id="salvar" type="submit">Salvar</button>
+      <button id="cancelar" type="button">Cancelar</button>
+    </form>
+  </section>
+</main>
+
+<dialog id="confirmacao" aria-labelledby="tituloConfirmacao">
+  <h2 id="tituloConfirmacao">Excluir jogo</h2>
+  <p id="mensagemConfirmacao"></p>
+  <form method="dialog">
+    <button value="nao" autofocus>Não</button>
+    <button value="sim">Sim</button>
+  </form>
+</dialog>
+
+<footer>
+  <hr>
+  <p>Felipe Rassati Stephano · TADS 3B Noturno · 2026</p>
+  <p>Uso de IA: Sim. O ChatGPT gerou o HTML e o JavaScript da tela.</p>
+</footer>
+
+<script>
+  const telaLista = document.querySelector('#telaLista');
+  const telaForm = document.querySelector('#telaForm');
+  const form = document.querySelector('#jogoForm');
+  const lista = document.querySelector('#lista');
+  const vazio = document.querySelector('#vazio');
+  const sucesso = document.querySelector('#sucesso');
+  const erro = document.querySelector('#erro');
+  const salvar = document.querySelector('#salvar');
+  const cancelar = document.querySelector('#cancelar');
+  const confirmacao = document.querySelector('#confirmacao');
+
+  let idEdicao = null;
+  let jogoParaExcluir = null;
+
+  async function mensagemErro(resposta, mensagemPadrao) {
+      const dados = await resposta.json().catch(() => null);
+
+      if (Array.isArray(dados?.errors) && dados.errors.length > 0) {
+          const mensagens = dados.errors
+              .map(campo => campo.defaultMessage || campo.message)
+              .filter(Boolean);
+          return mensagens.join(' ') || mensagemPadrao;
+      }
+
+      return dados?.detail || mensagemPadrao;
+  }
+
+  function criarBotao(texto, acao) {
+      const botao = document.createElement('button');
+      botao.type = 'button';
+      botao.textContent = texto;
+      botao.addEventListener('click', acao);
+      return botao;
+  }
+
+  function criarItem(jogo) {
+      const item = document.createElement('li');
+      const descricao = document.createElement('p');
+      descricao.textContent = `${jogo.titulo} — ${jogo.anoLancamento} — ${jogo.plataforma}`;
+      item.append(descricao);
+
+      if (!jogo.disponivel) {
+          const aviso = document.createElement('strong');
+          aviso.textContent = 'Indisponível';
+          aviso.style.color = 'darkred';
+          item.append(aviso, document.createElement('br'));
+      }
+
+      const alterar = criarBotao('Alterar', () => abrirForm(jogo));
+      const excluir = criarBotao('Excluir', () => {
+          jogoParaExcluir = jogo;
+          confirmacao.returnValue = 'nao';
+          document.querySelector('#mensagemConfirmacao').textContent =
+              `Deseja excluir "${jogo.titulo}"?`;
+          confirmacao.showModal();
+      });
+
+      item.append(alterar, ' ', excluir);
+      return item;
+  }
+
+  async function carregarJogos() {
+      try {
+          const resposta = await fetch('/jogos');
+
+          if (!resposta.ok) {
+              throw new Error(await mensagemErro(resposta, 'Não foi possível carregar os jogos.'));
+          }
+
+          const jogos = await resposta.json();
+          lista.replaceChildren(...jogos.map(criarItem));
+          vazio.hidden = jogos.length !== 0;
+      } catch (falha) {
+          erro.textContent = falha.message;
+      }
+  }
+
+  function abrirForm(jogo) {
+      sucesso.textContent = '';
+      erro.textContent = '';
+      form.reset();
+
+      idEdicao = jogo?.id ?? null;
+      document.querySelector('#tituloForm').textContent =
+          jogo ? `Alterar jogo - ID ${jogo.id}` : 'Incluir novo jogo';
+
+      if (jogo) {
+          form.elements.titulo.value = jogo.titulo;
+          form.elements.anoLancamento.value = jogo.anoLancamento;
+          form.elements.plataforma.value = jogo.plataforma;
+          form.elements.disponivel.value = String(jogo.disponivel);
+          form.elements.observacao.value = jogo.observacao ?? '';
+      }
+
+      telaLista.hidden = true;
+      telaForm.hidden = false;
+      form.elements.titulo.focus();
+  }
+
+  function mostrarLista() {
+      telaForm.hidden = true;
+      telaLista.hidden = false;
+  }
+
+  form.addEventListener('submit', async evento => {
+      evento.preventDefault();
+      erro.textContent = '';
+
+      const campos = new FormData(form);
+      const ano = campos.get('anoLancamento');
+      const disponivel = campos.get('disponivel');
+
+      if (disponivel === null) {
+          erro.textContent = 'Informe se o jogo está disponível.';
+          return;
+      }
+
+      const jogo = {
+          titulo: campos.get('titulo').trim(),
+          anoLancamento: ano === '' ? null : Number(ano),
+          plataforma: campos.get('plataforma').trim(),
+          disponivel: disponivel === 'true',
+          observacao: campos.get('observacao')
+      };
+
+      const editando = idEdicao !== null;
+      const url = editando ? `/jogos/${idEdicao}` : '/jogos';
+      salvar.disabled = true;
+      cancelar.disabled = true;
+
+      try {
+          const resposta = await fetch(url, {
+              method: editando ? 'PUT' : 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(jogo)
+          });
+
+          if (!resposta.ok) {
+              throw new Error(await mensagemErro(resposta,
+                  'Confira o título, a plataforma e o ano de lançamento.'));
+          }
+
+          sucesso.textContent = editando
+              ? 'Jogo alterado com sucesso.'
+              : 'Jogo cadastrado com sucesso.';
+          mostrarLista();
+          await carregarJogos();
+      } catch (falha) {
+          erro.textContent = falha.message;
+      } finally {
+          salvar.disabled = false;
+          cancelar.disabled = false;
+      }
+  });
+
+  confirmacao.addEventListener('close', async () => {
+      const jogo = jogoParaExcluir;
+      jogoParaExcluir = null;
+
+      if (confirmacao.returnValue !== 'sim' || !jogo) {
+          return;
+      }
+
+      sucesso.textContent = '';
+      erro.textContent = '';
+
+      try {
+          const resposta = await fetch(`/jogos/${jogo.id}`, {
+              method: 'DELETE'
+          });
+
+          if (!resposta.ok) {
+              throw new Error(await mensagemErro(resposta, 'Não foi possível excluir o jogo.'));
+          }
+
+          sucesso.textContent = 'Jogo excluído com sucesso.';
+          await carregarJogos();
+      } catch (falha) {
+          erro.textContent = falha.message;
+      }
+  });
+
+  document.querySelector('#novo').addEventListener('click', () => abrirForm());
+
+  cancelar.addEventListener('click', () => {
+      erro.textContent = '';
+      mostrarLista();
+  });
+
+  carregarJogos();
+</script>
+</body>
+</html>
